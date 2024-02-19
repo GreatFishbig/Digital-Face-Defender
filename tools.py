@@ -1,5 +1,5 @@
 #!/usr/bin/python
-
+# coding=UTF-8
 import cv2
 import numpy
 import uuid
@@ -10,31 +10,32 @@ import  os
 import PIL
 from PIL import Image,  ImageOps
 import scipy
-
-
+import copy
+# import streamlit_modal as modal
+# import streamlit.components.v1 as components
 
 mp_drawing = mp.solutions.drawing_utils
 mp_face_mesh = mp.solutions.face_mesh  # 引入模型
 
-
 # PREDICTOR_PATH = "/home/matt/dlib-18.16/shape_predictor_68_face_landmarks.dat"
 # PREDICTOR_PATH = "./shape_predictor_68_face_landmarks.dat"
 SCALE_FACTOR = 1
-FEATHER_AMOUNT = 11 # between 1-11
-COLOUR_CORRECT_BLUR_FRAC = 0.5
+FEATHER_AMOUNT = 5 # between 1-11
+COLOUR_CORRECT_BLUR_FRAC = 0.6
 
 # FACE_POINTS = list(range(17, 68))
 # MOUTH_POINTS = list(range(48, 61))
 # RIGHT_BROW_POINTS = list(range(17, 22))
 LEFT_EYE_POINTS = [362,256,253,339,359,387,385,384,398]                        #[464, 441, 444, 265, 449, 451, 412]
-LEFT_BROW_POINTS = [336, 296, 334, 293, 300, 353]  # [285,336,296,334,293,300]
+# LEFT_BROW_POINTS = [336, 296, 334, 293, 300, 353]  # [285,336,296,334,293,300]
+LEFT_BROW_POINTS = [336, 296, 334, 293, 276]     # edit on 2023-11-10 by hychen
 RIGHT_EYE_POINTS = [130,110,23,26,133,157,158,159,160]                       #[226, 224, 188, 231, 228, 35]
 RIGHT_BROW_POINTS = [113, 70, 63, 105, 66, 107]  # [124,70,63,105,66,107]
 IRIS_POINTS = list(range(468, 478))
 RIGHT_BROW_POINTS_Checking = [28, 29, 224, 222, 53, 65]
 LIGHT_BROW_POINTS_Checking = [258, 259, 442, 444, 295, 283]
 RIGHT_EYES_DOWN_ZONE = [124, 35, 31, 228, 229, 230, 231, 232, 245, 168, 8]
-LEFT_EYES_DOWN_ZONE = [8, 168, 465, 453, 452, 451, 450, 449, 261, 265, 383]
+LEFT_EYES_DOWN_ZONE = [8, 168, 465, 453, 452, 451, 450, 449, 261, 265] #, 383]  # remove #383  point edit 2023-11-13
 WHOLE_FACE_LAYOUT = [68, 104, 69, 108, 151, 337,
                      299, 333, 298, 301, 383, 372,
                      340, 280, 411, 434, 430, 431,
@@ -49,13 +50,16 @@ KeyPoints_1 = OVERLAY_POINTS_mp
 KeyPoints_2 = [263,473,468,33,474,476,469,471,374,386,145,159,477,475,472,470,263,362,468,133]
 KeyPoints_3 = [226,233,56,122]
 
-
 class TooManyFaces(Exception):
     pass
-
+    # except:
+    # st.error("Please make sure that you choose A standard Image ")
+    # st.stop()
 
 class NoFaces(Exception):
-    pass
+   pass
+   # st.error("Please make sure that you choose A standard Image ")
+   # st.stop()
 
 def get_datas(landmarks_img) :
     #
@@ -97,7 +101,6 @@ def get_datas(landmarks_img) :
     row_contents=[D,L,R,ABdivGH,CDdivEF]
     return row_contents
 
-
 def detect_eyes_single(IMG_PATH):
     path1_ = IMG_PATH
     try:
@@ -131,15 +134,17 @@ def detect_eyes_single(IMG_PATH):
     result3 = '0'
     result4 = '0'
     # 判断是否斜视  ,
-    if D >Gmax:  #
-        if L > Lmax:
-            result1="1" #"Left-Exotropia"
-        if L < Lmin:
-            result1='2' #"Left-Esotropia"
-        if R > Rmax:
-            result2='1' #"Right-Exotropia"
-        if R < Rmin:
-            result2='2' #"Right-Esotropia"
+    if D >Gmax:  #  EDIT BY HYCHEN 2023/12/11 !!
+        st.info('This Picture maybe not a standard image.[pose?] ', icon="ℹ️")
+
+    if L > Lmax:
+        result1="1" #"Left-Exotropia"
+    if L < Lmin:
+        result1='2' #"Left-Esotropia"
+    if R > Rmax:
+        result2='1' #"Right-Exotropia"
+    if R < Rmin:
+        result2='2' #"Right-Esotropia"
     #else:
     #    result = result1+result2
 
@@ -158,7 +163,7 @@ def detect_eyes_single(IMG_PATH):
 def find_img_data (img_file_name):
     face_mesh = mp_face_mesh.FaceMesh(
         static_image_mode=True,  # TRUE:静态图片/False:摄像头实时读取
-        refine_landmarks=True,  # 使用Attention Mesh模型  false 眼睛保持原形状 ， ture 眼睛将改变为目标的形状  ?   获得iris landmarks ?
+        refine_landmarks=True,  # 使用Attention Mesh模型    获得iris landmarks .
 
         max_num_faces=1,  # 最大人脸检测数
         min_detection_confidence=0.3,  # 置信度阈值，监测是否检测人脸成功
@@ -180,11 +185,40 @@ def get_face_mesh():
     )
     return face_mesh
 
+def resize_image( Aimage:PIL.Image,new_size:tuple=(1024,1024)) -> PIL.Image:
+    resized_image = copy.deepcopy(Aimage)
+    # old_size=Aimage.size
+    # preserve aspect ratio
+    x, y =Aimage.size
+    if x > new_size[0]:
+        y = max(round(y * new_size[0] / x), 1)
+        x = round(new_size[0])
+    if y > new_size[1]:
+        x = max(round(x * new_size[1] / y), 1)
+        y = round(new_size[1])
+
+    resized_image.thumbnail(new_size) 
+    img_array = copy.deepcopy(np.asarray(resized_image))
+    if img_array[x:,y:].shape[0:2]!=(0,0) :
+        padded_x = round((new_size[0]-x ) / 2)
+        padded_y = round((new_size[1]-y) / 2)
+        # img_array.resize((new_size[0],new_size[1],4))
+        # img_array[x:,y:,0:4]=np.zeros((x,y,4))
+        # im = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        # im = cv2.resize(im, (new_size[0],new_size[1]))
+        padded_array=np.pad(img_array,((padded_y,padded_y),(padded_x,padded_x),(0,0)),mode='constant',constant_values=((255,255),(255,255),(0,0)))
+        tmp_img= PIL.Image.fromarray(padded_array, Aimage.mode)
+        # print('tmp_img  '+str(tmp_img.size[0:2]))
+        return tmp_img
+
+    # print('resized_image  '+str(resized_image.size[0:2]))
+    return resized_image
+
 def read_im_and_landmarks_mp(image_name, face_mesh):
     if isinstance(image_name,str):
        im=cv2.imread(image_name,cv2.IMREAD_COLOR)
     else :
-        im =  cv2.cvtColor(np.asarray(image_name), cv2.COLOR_RGB2BGR)
+       im =  cv2.cvtColor(np.asarray(image_name), cv2.COLOR_RGB2BGR)
 
     #im = cv2.imread(img, cv2.IMREAD_COLOR)
 
@@ -195,18 +229,20 @@ def read_im_and_landmarks_mp(image_name, face_mesh):
     return im, s
 
 def get_landmarks_mp(im, face_mesh):  # 与get_landmarks 函数等效
-
     # image = cv2.imread(im)
-
     results = face_mesh.process(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
-    image_rows, image_cols, _ = im.shape  # 获得图片信息
-    # if results.multi_face_landmarks  is None :
-    #     return    #raise NoFaces
-    if len(results.multi_face_landmarks) > 1:
-        raise TooManyFaces
-    if len(results.multi_face_landmarks) == 0:
-        raise NoFaces
     landmark_list = []
+    image_rows, image_cols, _ = im.shape  # 获得图片信息
+    if results.multi_face_landmarks  is None :
+        st.error("NO face detect in your  Image ")
+        return    #raise NoFaces
+    # if len(results.multi_face_landmarks) > 1:
+    #     raise TooManyFaces
+    if len(results.multi_face_landmarks) == 0:
+        st.error("NO face detect in your  Image ")
+        return  # raise NoFaces
+
+
     # if (results.multi_face_landmarks != None):
     for face_landmarks in results.multi_face_landmarks:
         for l in face_landmarks.landmark:
@@ -218,7 +254,7 @@ def get_landmarks_mp(im, face_mesh):  # 与get_landmarks 函数等效
 
 def get_temp_filename(mark='',filename_ori=''):
     uuid_str = uuid.uuid4().hex
-    return  os.path.join('.','temp',os.path.basename(filename_ori)+'_'+uuid_str+mark+'.png')
+    return  os.path.join('.', 'temp', os.path.basename(filename_ori) + '_' + uuid_str + mark + '.png')
 
 
 def transformation_from_points(points1, points2):
@@ -264,7 +300,7 @@ def draw_convex_hull(im, points, color):
     points = cv2.convexHull(points)
     cv2.fillConvexPoly(im, points, color=color)
 
-def get_face_mask(im, landmarks,keypoints=OVERLAY_POINTS_mp,with_gauss=True):
+def get_face_mask(im, landmarks, keypoints=OVERLAY_POINTS_mp, with_gauss=True):
     im = numpy.zeros(im.shape[:2], dtype=numpy.float64)
     # for group in OVERLAY_POINTS:  # comm 12-18
     # 给定几组点， 分别划出对边形，合并得到mask
@@ -321,20 +357,12 @@ def image_align(src_file,dst_file, face_landmarks, output_size=1024, transform_s
     # https://github.com/NVlabs/ffhq-dataset/blob/master/download_ffhq.py
 
     lm = np.array(face_landmarks)
-    # lm_chin = lm[0: 17]  # left-right
-    # lm_eyebrow_left = lm[17: 22]  # left-right
-    # lm_eyebrow_right = lm[22: 27]  # left-right
-    # lm_nose = lm[27: 31]  # top-down
-    # lm_nostrils = lm[31: 36]  # top-down
-    # lm_eye_left = lm[36: 42]  # left-clockwise
-
-    # left-clockwise  lm[362] always error , so change to lm[463]
     try :
       lm_eye_right = [lm[362],lm[385],lm[386],lm[263],lm[373],lm[380]]
-    # lm_eye_right = lm[42: 48]  # left-clockwise
       lm_eye_left = [lm[33],lm[159],lm[158],lm[133],lm[153],lm[144]]  # left-clockwise
     except :
-        raise  "can’t detect face landmarks"
+       st.error("Please make sure that you choose a standard Image ")
+       st.stop()
     # lm_mouth_outer = lm[48: 60]  # left-clockwise
     # lm_mouth_inner = lm[60: 68]  # left-clockwise
 
@@ -426,7 +454,7 @@ def fs(file1, file2):
     #align图片对齐代码不稳定， 计划暂时停用 2023-4-27
     # 将模特图片进行旋转使得图片人物居中 。
     #gmp_faceswap.image_align(file2,im2_tmp,landmarks2)      #gmp_faceswap.image_align(file2,im2_tmp,landmarks2)
-    im2_im =  image_align(file2, im2_tmp, landmarks2)  # gmp_faceswap.image_align(file2,im2_tmp,landmarks2)
+    im2_im = image_align(file2, im2_tmp, landmarks2)  # gmp_faceswap.image_align(file2,im2_tmp,landmarks2)
 
 
     # 将居中处理后的图片重新计算地标
@@ -462,14 +490,15 @@ def fs(file1, file2):
     output_im = np.minimum(output_im, 255)
     output_im = output_im.astype(np.uint8)
     # 此时 获得图片output_im 是直接粘帖患者图片到模特相应位置， 最能反映患者的颜色，皮肤纹理
-    temp_output=cv2.cvtColor(output_im,cv2.COLOR_BGR2RGB)
+    # temp_output=cv2.cvtColor(output_im,cv2.COLOR_BGR2RGB)
 
-    output_im_seamlessClone = output_im  #temp_output  #不使用无缝融合方式。 直接使用亮度融合图片 。
+    # output_im_seamlessClone = output_im  #temp_output  #不使用无缝融合方式。 直接使用亮度融合图片 。
     # output_file_seamless=get_temp_filename(f'_4_融合结果_高斯={FEATHER_AMOUNT}')
     # cv2.imwrite(output_file_seamless, output_im_seamlessClone)
     # annotated_output_im,annotated_landmarks2= read_im_and_landmarks_mp(output_file_seamless, face_mesh)
-    annotated_output_im,annotated_landmarks2= read_im_and_landmarks_mp(output_im_seamlessClone, face_mesh)
-
+    # annotated_output_im,annotated_landmarks2= read_im_and_landmarks_mp(output_im_seamlessClone, face_mesh)
+    annotated_output_im, annotated_landmarks2 = read_im_and_landmarks_mp(output_im, face_mesh)
 
     #return output_file_seamless, annotated_landmarks2, temp_output
-    return output_im_seamlessClone, annotated_landmarks2, temp_output
+    # return output_im_seamlessClone, annotated_landmarks2, temp_output
+    return annotated_output_im, annotated_landmarks2    #, temp_output
